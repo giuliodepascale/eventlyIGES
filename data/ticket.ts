@@ -1,7 +1,6 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { Ticket } from "@prisma/client";
 
 export async function getTicketById(ticketId: string) {
     try {
