@@ -56,7 +56,7 @@ Per eseguire il progetto in locale è necessario avere installato:
 Installazione delle dipendenze
 npm install
 
-### ⚙️ 3. Configurazione del file `.env`
+### Configurazione del file `.env`
 
 Crea un file `.env` nella root del progetto con il seguente contenuto (modifica i valori in base al tuo ambiente):
 
