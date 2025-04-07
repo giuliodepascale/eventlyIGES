@@ -2,6 +2,16 @@ Evently
 
 **Evently** è una piattaforma web che connette organizzatori e partecipanti, semplificando ogni aspetto della gestione e promozione di eventi di qualsiasi tipo. Gli organizzatori possono creare, promuovere e gestire eventi in modo professionale, rapido ed efficiente.Gli utenti possono scoprire facilmente nuovi eventi, acquistare biglietti, effettuare prenotazioni e trovare l’esperienza più adatta ai propri interessi.
 
+Dcomunetazione Progetto:
+
+
+[IGES_evently_proposta..pdf](https://github.com/user-attachments/files/19635154/IGES_evently_proposta.pdf)
+
+
+[info-progetto.xlsx](https://github.com/user-attachments/files/19635155/info-progetto.xlsx)
+
+
+
 
 ![screen-evently](https://github.com/user-attachments/assets/a683b076-1a47-4d0e-80b6-40d93c37a947)
 
