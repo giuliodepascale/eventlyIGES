@@ -1,42 +1,98 @@
-<<<<<<< HEAD
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+Evently
 
-## Getting Started
+**Evently** è una piattaforma web che connette organizzatori e partecipanti, semplificando ogni aspetto della gestione e promozione di eventi di qualsiasi tipo. Gli organizzatori possono creare, promuovere e gestire eventi in modo professionale, rapido ed efficiente.Gli utenti possono scoprire facilmente nuovi eventi, acquistare biglietti, effettuare prenotazioni e trovare l’esperienza più adatta ai propri interessi.
 
-First, run the development server:
+
+![screen-evently](https://github.com/user-attachments/assets/a683b076-1a47-4d0e-80b6-40d93c37a947)
+
+## Tecnologie utilizzate
+
+Il progetto utilizza un insieme di tecnologie, scelte per garantire modularità, scalabilità, e una chiara separazione dei livelli architetturali:
+
+| Tecnologia       | Ruolo / Utilizzo                                                              |
+|------------------|-------------------------------------------------------------------------------|
+| **Next.js**      | Framework React per applicazioni full-stack, con supporto App Router e Server Actions |
+| **TypeScript**   | Superset di JavaScript per tipizzazione statica e sviluppo robusto            |
+| **Tailwind CSS** | Framework CSS utility-first per la creazione di interfacce moderne            |
+| **Prisma ORM**   | ORM per la gestione del database relazionale tramite schema declarativo       |
+| **PostgreSQL**   | Database relazionale usato in abbinamento a Prisma                            |
+| **NextAuth.js**  | Autenticazione degli utenti lato client e server con sessioni sicure          |
+| **Zod**          | Libreria di validazione per form e input API                                  |
+
+## Struttura del progetto
+
+
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+eventlyIGES/
+│
+├── actions/             # Server Actions di Next.js: gestisce la logica applicativa per operazioni di creazione e aggiornamento dei dati nel database
+├── app/                 # Gestisce la struttura e la navigazione dell'app: ogni cartella rappresenta una pagina visibile all'utente, secondo il sistema di routing di Next.js
+├── components/          # Insieme di elementi dell’interfaccia grafica riutilizzabili, usati per comporre le pagine. Favorisce la separazione tra logica e presentazione.
+├── data/                # Funzioni per il recupero (lettura) di dati dal database, utilizzate per popolare le pagine con contenuti dinamici
+├── hooks/               # Custom React Hooks per logica riutilizzabile lato client
+├── lib/                 # Funzioni di utilità condivise 
+├── prisma/              # Contiene il file di configurazione del database. Consente di definire i modelli dati in modo dichiarativo e interagire con il database in modo efficiente.
+├── public/              # File statici pubblici accessibili (immagini)
+├── schemas/              # Raccolta di schemi Zod utilizzati per validare i dati ricevuti da form e API. Garantisce che le informazioni rispettino il formato e le regole previste.
+│
+├── .env                 # File delle variabili d'ambiente (escluso dal repository per sicurezza)
+├── auth.config.ts       # Configurazione di NextAuth: gestione dell'autenticazione
+├── middleware.ts        # Middleware globale per protezione delle route e gestione accessi
+├── routes.ts            # Mappa centralizzata delle rotte dell'applicazione: definisce in modo coerente e tipizzato i percorsi utilizzati nel progetto
+├── tailwind.config.ts   # Configurazione di Tailwind CSS
+├── tsconfig.json        # Configurazione del compilatore TypeScript
+└── next.config.ts       # Configurazione dell'app Next.js
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Guida all’installazione
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Per eseguire il progetto in locale è necessario avere installato:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- [Node.js](https://nodejs.org/) (versione 18 o superiore)
+- Un database PostgreSQL
+---
 
-## Learn More
+Installazione delle dipendenze
+npm install
 
-To learn more about Next.js, take a look at the following resources:
+### ⚙️ 3. Configurazione del file `.env`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Crea un file `.env` nella root del progetto con il seguente contenuto (modifica i valori in base al tuo ambiente):
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```env
+# URL del sito in locale o in produzione
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
 
-## Deploy on Vercel
+# Supabase - URL del progetto e chiave pubblica (anon key)
+NEXT_PUBLIC_SUPABASE_URL="https://<your-project>.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY="..."
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+# Secret per la gestione delle sessioni (NextAuth / Auth.js)
+AUTH_SECRET="..."
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-=======
-# eventlyitalia
-evently
+# Connessione al database tramite Supabase (pooling per runtime)
+DATABASE_URL="postgresql://user:password@host:port/database?pgbouncer=true"
 
->>>>>>> ba6551bac52e065e60ad9369b07f890c04af92fa
+# Connessione diretta al database (usata per le migrazioni Prisma)
+DIRECT_URL="postgresql://user:password@host:.../database"
+
+# Chiave API di Resend per l’invio email (inviti, conferme, ecc.)
+RESEND_API_KEY="re_..."
+
+# Stripe - chiave pubblica per il frontend
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY="pk_test_..."
+
+# Stripe - chiavi segrete per webhook e operazioni server
+STRIPE_SECRET_KEY="sk_test_..."
+STRIPE_WEBHOOK_SECRET="whsec_..."
+STRIPE_WEBHOOK_SECRET_EXPRESS="whsec_..."
+```
+
+Inizializzazione del database
+npx prisma db push
+
+Avvio del sever di sviluppo
+npm run dev
+
+
