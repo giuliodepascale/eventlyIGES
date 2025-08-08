@@ -491,13 +491,13 @@ export const EventForm = ({ organization, type, event }: EventFormProps) => {
                       <SelectTrigger>
                         <SelectValue placeholder="Seleziona una Provincia" />
                       </SelectTrigger>
-                      <SelectContent>
-                        {province.map((prov: { sigla: string }) => (
-                          <SelectItem key={prov.sigla} value={prov.sigla}>
-                            {prov.sigla}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
+                   <SelectContent>
+  {province.map((prov: { sigla: string }) => (
+    <SelectItem key={prov.sigla} value={prov.sigla}>
+      {prov.sigla}
+    </SelectItem>
+  ))}
+</SelectContent>
                     </Select>
                   </FormControl>
                   <FormMessage />

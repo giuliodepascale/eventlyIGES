@@ -143,25 +143,16 @@ export const CreateEventSchema = z.object({
     .string()
     .min(10, "La descrizione deve contenere almeno 10 caratteri")
     .max(300, "La descrizione non può superare i 300 caratteri"),
-  imageSrc: z
-    .string()
-    .url("L'immagine deve essere un URL valido")
-    .optional()
-    .nullable(),
+ imageSrc: z.string().url("...").or(z.literal("")).optional().nullable(),
   category: z
     .string()
     .nonempty("La categoria è obbligatoria"),
   organizationId: z
     .string(),
-  comune: z
-      .string()
-      .nonempty("Il comune è obbligatorio"),
-    provincia: z
-    .string()
-    .nonempty("Il comune è obbligatorio"),
-    regione: z
-    .string()
-    .nonempty("Il comune è obbligatorio"),
+  comune: z.string().nonempty("Il campo Comune è obbligatorio"),
+provincia: z.string().nonempty("Il campo Provincia è obbligatorio"),
+regione: z.string().nonempty("Il campo Regione è obbligatorio"),
+
     
 })
 ;
