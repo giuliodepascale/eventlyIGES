@@ -87,10 +87,10 @@ export const EventForm = ({ organization, type, event }: EventFormProps) => {
     }
 
     // 🔹 Ritorniamo direttamente le sigle
-    return region.province.map((sigla: { sigla: string }) => ({
-      nome: sigla, // Nome e sigla saranno uguali
-      sigla: sigla,
-    }));
+    return region.province.map((p: { sigla: string } | string) => {
+  const code = typeof p === "string" ? p : p.sigla;
+  return { nome: code, sigla: code };
+});
   }, [selectedRegion, regioni]);
 
   const comuni = useMemo(() => {
