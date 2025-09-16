@@ -6,10 +6,11 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getCoordinatesFromOSM } from "@/lib/map";
 import { getOrganizationById, getOrganizationOrganizers } from "@/data/organization";
+import { getOrganizationFollowersUserIds } from "@/data/favorite-organization";
+import { notifyUsers } from "./notification";
 
 export async function createEvent(values: z.infer<typeof CreateEventSchema>) {
   const validatedFields = await CreateEventSchema.safeParseAsync(values);
-
   if (!validatedFields.success) {
     return { error: "Campi non validi" };
   }
@@ -41,18 +42,13 @@ export async function createEvent(values: z.infer<typeof CreateEventSchema>) {
 
   const finalImageSrc = imageSrc?.trim() === "" ? undefined : imageSrc;
 
-  let latitudine: string | null = null;
-  let longitudine: string | null = null;
-
   const coords = await getCoordinatesFromOSM(indirizzo, comune);
-
   if (!coords.latitude || !coords.longitude) return { error: "Indirizzo non valido" };
 
-  // Convertiamo i numeri in stringa
-  latitudine = coords.latitude.toString() || "";
-  longitudine = coords.longitude.toString() || "";
+  const latitudine  = coords.latitude.toString();
+  const longitudine = coords.longitude.toString();
 
-  // Mapping dello status: "pubblico" diventa "ACTIVE", altrimenti "HIDDEN"
+  // "pubblico" -> ACTIVE, altrimenti HIDDEN
   const mappedStatus = status === "pubblico" ? "ACTIVE" : "HIDDEN";
 
   let newEvent;
@@ -80,9 +76,27 @@ export async function createEvent(values: z.infer<typeof CreateEventSchema>) {
     return { error: "Errore durante la creazione dell'evento" };
   }
 
+  // INVIO NOTIFICA AI FOLLOWER (solo se evento è pubblico)
+  if (mappedStatus === "ACTIVE") {
+    try {
+      const followerIds = await getOrganizationFollowersUserIds(organizationId);
+      if (followerIds.length) {
+        await notifyUsers({
+          title: "Nuovo evento",
+          message: `${organization.organization.name} ha pubblicato: ${title}`,
+          link: `/events/${newEvent.id}`,
+          senderOrganizationId: organizationId,
+          userIds: followerIds,
+        });
+      }
+    } catch (err) {
+      // Non bloccare il redirect: logga e vai avanti
+      console.error("Errore nell'invio notifiche ai follower:", err);
+    }
+  }
+
   redirect(`/events/${newEvent.id}`);
 }
-
 
 
 export async function updateEvent(

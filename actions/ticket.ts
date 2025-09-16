@@ -3,6 +3,8 @@
 import { db } from "@/lib/db";
 import { Ticket } from "@prisma/client";
 import { v4 as uuidv4 } from "uuid";
+import { sendUserNotification } from "./notification";
+
 
 export async function createTicketActionandUpdateSold(
   eventId: string,
@@ -17,25 +19,20 @@ export async function createTicketActionandUpdateSold(
     const ticketCode = uuidv4();
 
     const ticketType = await db.ticketType.findUnique({
-      where: {
-        id: ticketTypeId,
-      },
+      where: { id: ticketTypeId },
     });
 
-    // Check if ticket type exists
     if (!ticketType) {
       throw new Error("Ticket type not found");
     }
 
-    // Use a transaction to ensure both operations succeed or fail together
+    // Transazione: incrementa sold + crea ticket
     const result = await db.$transaction(async (tx) => {
-      // Update the sold count for the ticket type
       const updatedTicketType = await tx.ticketType.update({
         where: { id: ticketTypeId },
         data: { sold: { increment: 1 } },
       });
 
-      // Creazione del biglietto nel database
       const ticket = await tx.ticket.create({
         data: {
           eventId,
@@ -54,13 +51,29 @@ export async function createTicketActionandUpdateSold(
 
     console.log("✅ Biglietto creato con successo:", result.ticket);
     console.log("✅ Contatore biglietti venduti aggiornato:", result.updatedTicketType.sold);
-    
+
+    // Recupero evento (per titolo e org mittente) e invio notifica
+    const evt = await db.event.findUnique({
+      where: { id: eventId },
+      select: { id: true, title: true, organizationId: true },
+    });
+
+    if (evt) {
+      await sendUserNotification({
+        userId,
+        title: "Acquisto confermato",
+        message: `Hai acquistato un biglietto per: ${evt.title}`,
+        link: `/events/${evt.id}`,             // opzionalmente link al ticket specifico
+        senderOrganizationId: evt.organizationId ?? undefined,
+      });
+    }
+
     return { success: true, ticket: result.ticket };
   } catch (error) {
     console.error("❌ Errore nella creazione del biglietto:", error);
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : "Errore nella creazione del biglietto" 
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Errore nella creazione del biglietto",
     };
   }
 }

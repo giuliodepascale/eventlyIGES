@@ -14,3 +14,13 @@ export async function isFollowingOrganization(userId: string, organizationId: st
 
   return follow ? true : false;
 }
+
+
+export async function getOrganizationFollowersUserIds(organizationId: string): Promise<string[]> {
+  if (!organizationId) return [];
+  const rows = await db.favoriteOrganization.findMany({
+    where: { organizationId },
+    select: { userId: true },
+  });
+  return rows.map(r => r.userId);
+}
