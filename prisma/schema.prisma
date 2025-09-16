@@ -41,6 +41,7 @@ model User {
 
   @@map("users")
   OrganizationUser OrganizationUser[]
+  UserNotification UserNotification[]
 }
 
 model Organization {
@@ -196,4 +197,29 @@ model FavoriteOrganization {
 
   @@unique([userId, organizationId])
   @@map("favorite_organizations")
+}
+
+
+model UserNotification {
+  id             String       @id @default(cuid())
+  notificationId String
+  userId         String
+  createdAt      DateTime     @default(now())
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, userId])
+  @@map("user_notification")
+}
+
+
+model Notification {
+  id                     String             @id @default(cuid())
+  title                  String
+  message                String
+  link                   String?
+  createdAt              DateTime           @default(now())
+  senderOrganizationId   String?
+  userNotifications      UserNotification[]
+  @@map("notification")
 }
