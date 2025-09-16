@@ -36,7 +36,8 @@ model User {
 
   favoriteIds       String[]
   tickets           Ticket[]
-  prenotazioni      Prenotazione[]       
+  prenotazioni      Prenotazione[]
+  favoriteOrganizations FavoriteOrganization[]       
 
   @@map("users")
   OrganizationUser OrganizationUser[]
@@ -60,6 +61,8 @@ model Organization {
   stripeAccountId     String?
   ticketingStatus     String              @default("no_stripe")
                
+  favoriteByUsers      FavoriteOrganization[]
+
   // Relazioni con OrganizationUser
   organizationUsers   OrganizationUser[]
 
@@ -183,3 +186,14 @@ model Prenotazione {
 
 
 
+model FavoriteOrganization {
+  id             String       @id @default(cuid())
+  userId         String
+  organizationId String
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@map("favorite_organizations")
+}
