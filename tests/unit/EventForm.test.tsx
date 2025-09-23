@@ -1,10 +1,11 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-require-imports */
 // Forza timezone coerente alla logica del form
 process.env.TZ = "Europe/Rome";
 
 import React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
 import EventForm from "@/components/events/event-form";
 
 // ---------- MOCK dipendenze esterne ----------
@@ -14,6 +15,7 @@ jest.mock("@/components/altre/file-uploader", () => ({
   ),
 }));
 
+// NOTA: enhancement notifiche escluso -> createEvent risolve semplicemente
 jest.mock("@/actions/event", () => ({
   createEvent: jest.fn().mockResolvedValue({ ok: true }),
   updateEvent: jest.fn().mockResolvedValue({ ok: true }),
@@ -109,7 +111,7 @@ jest.mock("@mui/x-date-pickers/MobileTimePicker", () => ({
 
 // ---- categorie usate dal Select ----
 jest.mock("@/components/altre/categories", () => ({
-  categories: [{ label: "Concerto" }, { label: "Festa" }],
+  categories: [{ label: "Concerto" }, { label: "Workshop" }, { label: "Hackathon" }, { label: "Open Day" }],
 }));
 
 // ---- Mock shadcn/ui Select -> <select> nativo (safe) con id dal Trigger ----
@@ -140,16 +142,13 @@ jest.mock("@/components/ui/select", () => {
         {children}
       </select>
     ),
-
-    // Collega l'id del trigger al select per l'associazione label-for
+    // collega id
     SelectTrigger: ({ id }: { id?: string }) => {
       lastId = id;
       return null;
     },
-
     SelectContent: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
     SelectValue: () => null,
-
     SelectItem: ({ value, children }: { value: string; children?: React.ReactNode }) => (
       <option value={value}>{children}</option>
     ),
@@ -181,6 +180,10 @@ jest.mock("@/components/ui/checkbox", () => ({
     disconnect() {}
   };
 
+// ---------- Accesso stabile al mock azioni ----------
+const eventActions = require("@/actions/event");
+const createEventMock = eventActions.createEvent as jest.Mock;
+
 // ---------- Dati base ----------
 const organization = {
   id: "org-1",
@@ -204,28 +207,47 @@ const emptyOrganization = {
 
 // ---------- Helper (niente UTC!) ----------
 const pad = (n: number) => String(n).padStart(2, "0");
-
-const setDateLocalString = (y: number, m: number, d: number) =>
-  `${y}-${pad(m)}-${pad(d)}`;
+const setDateLocalString = (y: number, m: number, d: number) => `${y}-${pad(m)}-${pad(d)}`;
 
 const setDate = (el: HTMLElement, y: number, m: number, d: number) => {
-  const val = setDateLocalString(y, m, d);
-  fireEvent.change(el, { target: { value: val } });
+  fireEvent.change(el, { target: { value: setDateLocalString(y, m, d) } });
 };
-
 const setToday = (dateInput: HTMLElement) => {
   const now = new Date();
   setDate(dateInput, now.getFullYear(), now.getMonth() + 1, now.getDate());
 };
-
 const setTime = (el: HTMLElement, hh = 12, mm = 0) => {
   fireEvent.change(el, { target: { value: `${pad(hh)}:${pad(mm)}` } });
 };
 
+// Riempie i campi comuni validi (categoria/luogo/regione/provincia/comune, data/ora)
+const fillCommonValidFields = () => {
+  fireEvent.change(screen.getByLabelText(/Indirizzo/i), { target: { value: "Via Roma 2" } });
+
+  // Select: 0=Categoria, 1=Stato, 2=Regione, 3=Provincia, 4=Comune (ordine tipico)
+  const selects = screen.getAllByTestId("select");
+  fireEvent.change(selects[0], { target: { value: "Concerto" } }); // Categoria
+  fireEvent.change(selects[2], { target: { value: "Campania" } }); // Regione
+  fireEvent.change(selects[3], { target: { value: "NA" } });       // Provincia
+  fireEvent.change(selects[4], { target: { value: "Napoli" } });   // Comune
+
+  // Data/ora valide
+  setToday(screen.getByTestId("date-picker"));
+  setTime(screen.getByTestId("time-picker"), 12, 0);
+};
+
+// ---------- Reset tra test ----------
+beforeEach(() => {
+  jest.clearAllMocks();
+});
+afterEach(() => {
+  cleanup();
+});
+
 // =============================================================
-//                         TESTS
+//                         TESTS (RF_16)
 // =============================================================
-describe("EventForm", () => {
+describe("RF_16 – Creazione Evento (EventForm)", () => {
   it("TC-00: rende i campi principali", () => {
     render(<EventForm organization={organization} type="create" />);
     expect(screen.getByLabelText(/Titolo/i)).toBeInTheDocument();
@@ -239,7 +261,7 @@ describe("EventForm", () => {
     expect(screen.getByText(/Crea evento/i)).toBeInTheDocument();
   });
 
-  it("TC-01: errore su submit con campi obbligatori mancanti", async () => {
+  it("TC-01: submit con campi obbligatori mancanti → errori visibili", async () => {
     render(<EventForm organization={emptyOrganization} type="create" />);
     fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
     await waitFor(() => {
@@ -253,101 +275,140 @@ describe("EventForm", () => {
     });
   });
 
-  // ---------- EQUIVALENCE CLASSES & BOUNDARIES ----------
-  it("TC-10 (Title ECi<3): titolo troppo corto", async () => {
+  // ------------------ SUCCESS CASES (notifiche escluse) ------------------
+
+  it("TC_1_RF_16: Successo pubblico (notifiche escluse) → evento creato", async () => {
     render(<EventForm organization={organization} type="create" />);
+
+    fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Open Conference 2025" } });
+    fireEvent.change(screen.getByLabelText(/Descrizione/i), { target: { value: "Evento annuale dedicato alle conferenze open source" } });
+    fillCommonValidFields();
+
+    fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
+    await waitFor(() => expect(createEventMock).toHaveBeenCalled());
+  });
+
+  it("TC_1_1_RF_16: Successo privato → evento creato", async () => {
+    render(<EventForm organization={organization} type="create" />);
+
+    fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Open Workshop 2025" } });
+    fireEvent.change(screen.getByLabelText(/Descrizione/i), { target: { value: "Workshop tecnico per sviluppatori" } });
+    fillCommonValidFields();
+
+    // Imposta stato PRIVATO/HIDDEN
+    const selects = screen.getAllByTestId("select");
+    fireEvent.change(selects[1], { target: { value: "privato" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
+    await waitFor(() => expect(createEventMock).toHaveBeenCalled());
+  });
+
+  it("TC_1_2_RF_16: Successo pubblico senza follower → evento creato", async () => {
+    render(<EventForm organization={organization} type="create" />);
+
+    fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Hackathon 2025" } });
+    fireEvent.change(screen.getByLabelText(/Descrizione/i), { target: { value: "Evento annuale di hackathon per studenti" } });
+    fillCommonValidFields();
+
+    fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
+    await waitFor(() => expect(createEventMock).toHaveBeenCalled());
+  });
+
+  it("TC_1_3_RF_16: Successo pubblico con errore notifiche (escluse) → evento creato", async () => {
+    render(<EventForm organization={organization} type="create" />);
+
+    fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Open Day 2025" } });
+    fireEvent.change(screen.getByLabelText(/Descrizione/i), { target: { value: "Giornata aperta per studenti e docenti" } });
+    fillCommonValidFields();
+
+    fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
+    await waitFor(() => expect(createEventMock).toHaveBeenCalled());
+  });
+
+  // ------------------ ERROR CASES ------------------
+
+  it("TC_1_4_RF_16: titolo troppo corto → errore e niente creazione", async () => {
+    render(<EventForm organization={organization} type="create" />);
+
     fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "ab" } });
+    fireEvent.change(screen.getByLabelText(/Descrizione/i), { target: { value: "Evento valido con descrizione sufficiente" } });
+    fillCommonValidFields();
+
     fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
     await waitFor(() => {
       expect(screen.getByText(/Il titolo deve contenere almeno 3 caratteri/i)).toBeInTheDocument();
+      expect(createEventMock).not.toHaveBeenCalled();
     });
   });
 
-  it("TC-11 (Desc ECi<10): descrizione troppo corta", async () => {
+  it("TC_1_5_RF_16: descrizione troppo corta → errore e niente creazione", async () => {
     render(<EventForm organization={organization} type="create" />);
-    fireEvent.change(screen.getByLabelText(/Descrizione/i), {
-      target: { value: "breve" },
-    });
+
+    fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Open Conference 2025" } });
+    fireEvent.change(screen.getByLabelText(/Descrizione/i), { target: { value: "breve" } });
+    fillCommonValidFields();
+
     fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
     await waitFor(() => {
-      expect(
-        screen.getByText(/La descrizione deve contenere almeno 10 caratteri/i)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/La descrizione deve contenere almeno 10 caratteri/i)).toBeInTheDocument();
+      expect(createEventMock).not.toHaveBeenCalled();
     });
   });
 
-  it("TC-12 (Date ECi-past): data nel passato non ammessa", async () => {
+  it("TC_1_6_RF_16: data evento non valida (passata) → errore e niente creazione", async () => {
     render(<EventForm organization={organization} type="create" />);
+
+    fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Open Conference 2025" } });
+    fireEvent.change(screen.getByLabelText(/Descrizione/i), { target: { value: "Evento valido" } });
+    fillCommonValidFields();
+
+    // Sovrascrivi con data passata (ieri)
     const dateInput = screen.getByTestId("date-picker");
-    // ieri (locale)
     const past = new Date();
     past.setDate(past.getDate() - 1);
-    const localPast = setDateLocalString(
-      past.getFullYear(),
-      past.getMonth() + 1,
-      past.getDate()
-    );
-    fireEvent.change(dateInput, { target: { value: localPast } });
+    fireEvent.change(dateInput, {
+      target: {
+        value: setDateLocalString(past.getFullYear(), past.getMonth() + 1, past.getDate()),
+      },
+    });
 
     fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
     await waitFor(() => {
       expect(screen.getByText(/La data dell'evento non può essere nel passato/i)).toBeInTheDocument();
+      expect(createEventMock).not.toHaveBeenCalled();
     });
   });
 
-  it("TC-13 (Category ECi-empty): categoria vuota", async () => {
-    render(<EventForm organization={emptyOrganization} type="create" />);
-    fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
-    await waitFor(() => {
-      expect(screen.getByText(/La categoria è obbligatoria/i)).toBeInTheDocument();
-    });
-  });
-
-  it("TC-14 (Loc ECi-empty): comune/provincia/regione vuoti", async () => {
-    render(<EventForm organization={emptyOrganization} type="create" />);
-    fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
-    await waitFor(() => {
-      expect(screen.getByText(/Il campo Comune è obbligatorio/i)).toBeInTheDocument();
-      expect(screen.getByText(/Il campo Provincia è obbligatorio/i)).toBeInTheDocument();
-      expect(screen.getByText(/Il campo Regione è obbligatorio/i)).toBeInTheDocument();
-    });
-  });
-
-  // Questi due casi sono meglio nella suite unitaria Zod (non riproducibili via UI qui):
-  it.skip("TC-15 (Time ECi): orario non impostato/errato -> errore (spostare nei test Zod)", async () => {});
-  it.skip("TC-16 (Image ECi): url non valido (spostare nei test Zod)", async () => {});
-
-  it("TC-20 (Happy path): tutti i campi validi -> createEvent chiamata", async () => {
-    const { createEvent } = require("@/actions/event");
+  it("TC_1_7_RF_16: location/indirizzo troppo corto → errore e niente creazione", async () => {
     render(<EventForm organization={organization} type="create" />);
 
-    // Testo
-    fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Concerto Test" } });
-    fireEvent.change(screen.getByLabelText(/Descrizione/i), {
-      target: { value: "Descrizione evento valida per test" },
-    });
-    fireEvent.change(screen.getByLabelText(/Indirizzo/i), { target: { value: "Via Roma 2" } });
+    fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Open Conference 2025" } });
+    fireEvent.change(screen.getByLabelText(/Descrizione/i), { target: { value: "Evento valido con descrizione sufficiente" } });
 
-    // Select ordinati: 0=Categoria, 1=Status, 2=Regione, 3=Provincia, 4=Comune
+    // Riempie il resto ma usa indirizzo troppo corto
+    fireEvent.change(screen.getByLabelText(/Indirizzo/i), { target: { value: "RO" } });
+
     const selects = screen.getAllByTestId("select");
-    fireEvent.change(selects[0], { target: { value: "Concerto" } }); // Categoria
-    fireEvent.change(selects[2], { target: { value: "Campania" } }); // Regione
-    fireEvent.change(selects[3], { target: { value: "NA" } });       // Provincia
-    fireEvent.change(selects[4], { target: { value: "Napoli" } });    // Comune
+    fireEvent.change(selects[0], { target: { value: "Concerto" } });
+    fireEvent.change(selects[2], { target: { value: "Campania" } });
+    fireEvent.change(selects[3], { target: { value: "NA" } });
+    fireEvent.change(selects[4], { target: { value: "Napoli" } });
 
-    // Data/ora valide (locale)
     setToday(screen.getByTestId("date-picker"));
     setTime(screen.getByTestId("time-picker"), 12, 0);
 
     fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
-
     await waitFor(() => {
+      // Messaggio generico o specifico: adattare alla tua copy esatta
       expect(
-        screen.queryByText(
-          /obbligatori|obbligatoria|richiesto|deve contenere|url valido|non può essere nel passato/i
-        )
-      ).toBeNull();
-      expect(createEvent).toHaveBeenCalled();
+        screen.getByText(/L'indirizzo.*almeno 3 caratteri/i)
+      ).toBeInTheDocument();
+      expect(createEventMock).not.toHaveBeenCalled();
     });
+  });
+
+  it.skip("TC_1_8_RF_16: URL immagine non valido → UI non applicabile (gestire in test Zod/service)", () => {
+    // Il form espone solo uploader, non un campo URL testabile via UI.
+    // Coprire con CreateEventSchema.spec.ts (imageSrc = 'htp:/invalid' -> errore).
   });
 });
