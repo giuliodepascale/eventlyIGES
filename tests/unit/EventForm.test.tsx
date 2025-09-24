@@ -406,9 +406,4 @@ describe("RF_16 – Creazione Evento (EventForm)", () => {
       expect(createEventMock).not.toHaveBeenCalled();
     });
   });
-
-  it.skip("TC_1_8_RF_16: URL immagine non valido → UI non applicabile (gestire in test Zod/service)", () => {
-    // Il form espone solo uploader, non un campo URL testabile via UI.
-    // Coprire con CreateEventSchema.spec.ts (imageSrc = 'htp:/invalid' -> errore).
-  });
 });
