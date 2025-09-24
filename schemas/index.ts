@@ -117,108 +117,38 @@ export const SettingsSchema = z.object({
 
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-const StatusSchema = z.preprocess((val) => {
-  if (val === "ACTIVE") return "pubblico";
-  if (val === "HIDDEN") return "privato";
-  return val;
-}, z.enum(["pubblico", "privato"]));
 
-export const CreateEventSchema = z
-  .object({
-    // RF_16: 3–100
-    title: z
-      .string()
-      .min(3, "Il titolo deve contenere almeno 3 caratteri")
-      .max(100, "Il titolo non può superare i 100 caratteri"),
-
-    // Verrà valorizzata dopo il combine (date+time) nella submit
-    eventDate: z.date().optional(), // solo placeholder/derivato
-
-    status: StatusSchema.default("pubblico"),
-
-    isReservationActive: z.boolean(),
-
-    eventTime: z.date({
-      required_error: "Il campo orario dell'evento è obbligatorio",
-    }),
-
-    eventDateDay: z
-      .date({
-        required_error: "Il campo data dell'evento è obbligatorio",
-      })
-      .refine(
-        (d) => startOfDay(d).getTime() >= startOfDay(new Date()).getTime(),
-        { message: "La data dell'evento non può essere nel passato" }
-      ),
-
-    // RF_16: 3–100
-    indirizzo: z
-      .string()
-      .min(3, "L'indirizzo deve contenere almeno 3 caratteri")
-      .max(100, "L'indirizzo non può superare i 100 caratteri"),
-
-    // RF_16: 10–500
-    description: z
-      .string()
-      .min(10, "La descrizione deve contenere almeno 10 caratteri")
-      .max(500, "La descrizione non può superare i 500 caratteri"),
-
-    // Vuoto OK, altrimenti URL valido
-    imageSrc: z
-      .string()
-      .url("URL immagine non valido")
-      .or(z.literal(""))
-      .optional()
-      .nullable(),
-
-    category: z
-      .string()
-      .transform((s) => s.trim())
-      .refine((s) => s.length > 0, "La categoria è obbligatoria"),
-
-    organizationId: z.string().min(1, "L'organizzazione è obbligatoria"),
-
-    comune: z
-      .string()
-      .transform((s) => s.trim())
-      .refine((s) => s.length > 0, "Il campo Comune è obbligatorio"),
-
-    provincia: z
-      .string()
-      .transform((s) => s.trim())
-      .refine((s) => s.length > 0, "Il campo Provincia è obbligatorio"),
-
-    regione: z
-      .string()
-      .transform((s) => s.trim())
-      .refine((s) => s.length > 0, "Il campo Regione è obbligatorio"),
-  })
-  // Coerenza day+time: se è oggi, verifica che l'orario non sia nel passato (locale)
-  .superRefine((val, ctx) => {
-    const todayStart = startOfDay(new Date()).getTime();
-    const dayStart = startOfDay(val.eventDateDay).getTime();
-
-    if (dayStart === todayStart) {
-      const now = new Date();
-      const t = val.eventTime;
-      const candidate = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-        t.getHours(),
-        t.getMinutes(),
-        0,
-        0
-      );
-      if (candidate.getTime() <= now.getTime()) {
-        ctx.addIssue({
-          path: ["eventTime"],
-          code: z.ZodIssueCode.custom,
-          message: "L'orario dell'evento deve essere nel futuro",
-        });
-      }
-    }
-  });
+export const CreateEventSchema = z.object({
+  title: z.string()
+    .min(3, "Il titolo deve contenere almeno 3 caratteri")
+    .max(50, "Il titolo non può superare i 50 caratteri"),
+  eventDate: z.date(), // valorizzata a submit dopo il combine
+  status: z.enum(["pubblico", "privato"]).default("pubblico"),
+  isReservationActive: z.boolean(),
+  eventTime: z.date({ required_error: "Il campo orario dell'evento è obbligatorio" }),
+  eventDateDay: z.date({ required_error: "Il campo data dell'evento è obbligatorio" })
+    .refine(
+      (d) => startOfDay(d).getTime() >= startOfDay(new Date()).getTime(),
+      { message: "La data dell'evento non può essere nel passato" }
+    ),
+  indirizzo: z.string()
+    .min(3, "L'indirizzo deve contenere almeno 3 caratteri")
+    .max(50, "L'indirizzo non può superare i 50 caratteri"),
+  description: z.string()
+    .min(10, "La descrizione deve contenere almeno 10 caratteri")
+    .max(300, "La descrizione non può superare i 300 caratteri"),
+  imageSrc: z.string().url("Inserisci un URL valido").or(z.literal("")).optional().nullable(),
+  category: z.string().transform(s => s.trim())
+    .refine(s => s.length > 0, "La categoria è obbligatoria"),
+  organizationId: z.string()
+    .min(1, "L'organizzazione è obbligatoria"),
+  comune: z.string().transform(s => s.trim())
+    .refine(s => s.length > 0, "Il campo Comune è obbligatorio"),
+  provincia: z.string().transform(s => s.trim())
+    .refine(s => s.length > 0, "Il campo Provincia è obbligatorio"),
+  regione: z.string().transform(s => s.trim())
+    .refine(s => s.length > 0, "Il campo Regione è obbligatorio"),
+});
 export const UpdateTicketTypeSchema = z.object({
   eventId: z.string(),
   name: z.string().min(1, "Il nome è obbligatorio"),
