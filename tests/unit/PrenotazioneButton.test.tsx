@@ -5,7 +5,7 @@ import PrenotaOraButton from "@/components/events/prenotazione/prenota-button";
 import { useRouter } from "next/navigation";
 import { createBookingAction } from "@/actions/prenotazioni";
 
-// ---------- MOCK dipendenze esterne ----------
+// MOCK dipendenze esterne
 jest.mock("next/navigation", () => ({
   useRouter: jest.fn(),
 }));
@@ -22,7 +22,7 @@ describe("PrenotaOraButton", () => {
     (useRouter as jest.Mock).mockReturnValue({ push: pushMock });
   });
 
-  // ----------------- Happy Path -----------------
+  //Successo
   it("TC_1_RF_13: prenotazione riuscita -> reindirizza alla pagina di conferma", async () => {
     (createBookingAction as jest.Mock).mockResolvedValue({
       booking: { id: "123" },
@@ -38,7 +38,7 @@ describe("PrenotaOraButton", () => {
     });
   });
 
-  // ----------------- Caso di Errore -----------------
+  //Caso di Errore
   it("TC_1_1_RF_13: errore nella prenotazione -> mostra messaggio di errore", async () => {
     (createBookingAction as jest.Mock).mockRejectedValue(new Error("Errore server"));
 
