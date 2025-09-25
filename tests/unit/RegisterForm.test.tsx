@@ -2,7 +2,6 @@
 import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import RegisterForm from "@/components/auth/register-form";
-import * as registerAction from "@/actions/register";
 
 //MOCK dipendenze esterne
 jest.mock("@/lib/db", () => ({

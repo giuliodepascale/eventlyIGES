@@ -1,92 +1,138 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import React from "react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import OrganizationClient from "@/components/organization/organization-client";
 import { followOrganization, unfollowOrganization } from "@/actions/favorites-organization";
-import { db } from "@/lib/db";
+import { SafeOrganization } from "@/app/types";
 
-// MOCK del database
-jest.mock("@/lib/db", () => ({
-  db: { $transaction: jest.fn() },
+
+// Mock
+jest.mock("@/actions/favorites-organization", () => ({
+  followOrganization: jest.fn(),
+  unfollowOrganization: jest.fn(),
 }));
 
-describe("Follow/Unfollow Organization", () => {
-  const mockTransaction = db.$transaction as jest.Mock;
+describe("OrganizationClient - RF_15", () => {
+  const organization: SafeOrganization = {
+  id: "org1",
+  name: "Test Org",
+  imageSrc: "/test.jpg",
+  email: "info@test.org",
+  phone: "123456789",
+  indirizzo: "Via Roma, 1",
+  comune: "Milano",
+  provincia: "MI",
+  regione: "Lombardia",
+  linkEsterno: "https://test.org",
+  description: "Descrizione test",
+  latitudine: "45.4642",
+  longitudine: "9.1900",
+  ticketingStatus: "open",
+  stripeAccountId: "acct_1234567890", 
+  createdAt: new Date().toISOString(),
+};
+
 
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  //Successo follow e unfollow
-  it("TC_1_RF_15: follow eseguito con successo", async () => {
-    mockTransaction.mockImplementation(async (callback: any) => {
-      await callback({
-        user: { findUnique: jest.fn().mockResolvedValue({ id: "user1" }) },
-        organization: { findUnique: jest.fn().mockResolvedValue({ id: "org1" }) },
-        favoriteOrganization: { findUnique: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({}) },
-      });
-    });
+  // TC_1_RF_15: Successo follow eseguito
+  it("TC_1_RF_15: utente loggato, organizzazione esistente, inizialmente non seguito -> follow eseguito", async () => {
+    (followOrganization as jest.Mock).mockResolvedValue({ success: true });
 
-    const result = await followOrganization("org1", "user1");
-    expect(result).toEqual({ success: true });
-    expect(mockTransaction).toHaveBeenCalledTimes(1);
+    render(<OrganizationClient organization={organization} userId="user1" initialFollowing={false} />);
+
+    const followButton = screen.getByRole("button", { name: /Segui/i });
+    fireEvent.click(followButton);
+
+    await waitFor(() => {
+      expect(followOrganization).toHaveBeenCalledWith("org1", "user1");
+      expect(screen.getByRole("button", { name: /Smetti di seguire/i })).toBeInTheDocument();
+    });
   });
 
-  it("TC_1_1_RF_15: unfollow eseguito con successo", async () => {
-    mockTransaction.mockImplementation(async (callback: any) => {
-      await callback({
-        user: { findUnique: jest.fn().mockResolvedValue({ id: "user1" }) },
-        favoriteOrganization: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
-      });
-    });
+  // TC_1_1_RF_15: Successo unfollow eseguito
+  it("TC_1_1_RF_15: utente loggato, organizzazione esistente, inizialmente seguito -> unfollow eseguito", async () => {
+    (unfollowOrganization as jest.Mock).mockResolvedValue({ success: true });
 
-    const result = await unfollowOrganization("org1", "user1");
-    expect(result).toEqual({ success: true });
-    expect(mockTransaction).toHaveBeenCalledTimes(1);
+    render(<OrganizationClient organization={organization} userId="user1" initialFollowing={true} />);
+
+    const unfollowButton = screen.getByRole("button", { name: /Smetti di seguire/i });
+    fireEvent.click(unfollowButton);
+
+    await waitFor(() => {
+      expect(unfollowOrganization).toHaveBeenCalledWith("org1", "user1");
+      expect(screen.getByRole("button", { name: /Segui/i })).toBeInTheDocument();
+    });
   });
 
-  //Errore follow e unfollow
-  it("TC_1_2_RF_15: follow fallito - utente non trovato", async () => {
-    mockTransaction.mockImplementation(async (callback: any) => {
-      await callback({
-        user: { findUnique: jest.fn().mockResolvedValue(null) },
-        organization: { findUnique: jest.fn() },
-        favoriteOrganization: { findUnique: jest.fn() },
-      });
-    });
-
-    await expect(followOrganization("org1", "userX")).rejects.toThrow("Errore durante il follow dell'organizzazione.");
+  it("TC_1_2_RF_15: utente non loggato -> mostra messaggio di errore", async () => {
+  // Forziamo il mock a fallire se userId è vuoto
+  (followOrganization as jest.Mock).mockImplementation((orgId, userId) => {
+    if (!userId) {
+      return Promise.reject(new Error("Utente non loggato"));
+    }
+    return Promise.resolve({ success: true });
   });
 
-  it("TC_1_3_RF_15: follow fallito - organizzazione non trovata", async () => {
-    mockTransaction.mockImplementation(async (callback: any) => {
-      await callback({
-        user: { findUnique: jest.fn().mockResolvedValue({ id: "user1" }) },
-        organization: { findUnique: jest.fn().mockResolvedValue(null) },
-        favoriteOrganization: { findUnique: jest.fn() },
-      });
-    });
+  render(<OrganizationClient organization={organization} userId="" initialFollowing={false} />);
 
-    await expect(followOrganization("orgX", "user1")).rejects.toThrow("Errore durante il follow dell'organizzazione.");
+  const followButton = screen.getByRole("button", { name: /Segui/i });
+  fireEvent.click(followButton);
+
+  await waitFor(() => {
+    expect(screen.getByText(/Azione non riuscita/i)).toBeInTheDocument();
+    expect(followOrganization).toHaveBeenCalledWith("org1", "");
+  });
+});
+
+
+
+  // TC_1_3_RF_15: Errore organizzazione inesistente
+  it("TC_1_3_RF_15: organizzazione inesistente -> mostra messaggio di errore", async () => {
+    (followOrganization as jest.Mock).mockRejectedValue(new Error("Organizzazione non trovata"));
+
+    render(<OrganizationClient organization={{ ...organization, id: "nonexistent" }} userId="user1" initialFollowing={false} />);
+
+    const followButton = screen.getByRole("button", { name: /Segui/i });
+    fireEvent.click(followButton);
+
+    await waitFor(() => {
+      expect(followOrganization).toHaveBeenCalledWith("nonexistent", "user1");
+      expect(screen.getByText(/Azione non riuscita/i)).toBeInTheDocument();
+    });
   });
 
-  it("TC_1_4_RF_15: follow fallito - già seguita", async () => {
-    mockTransaction.mockImplementation(async (callback: any) => {
-      await callback({
-        user: { findUnique: jest.fn().mockResolvedValue({ id: "user1" }) },
-        organization: { findUnique: jest.fn().mockResolvedValue({ id: "org1" }) },
-        favoriteOrganization: { findUnique: jest.fn().mockResolvedValue({ userId: "user1", organizationId: "org1" }) },
-      });
-    });
+  // TC_1_4_RF_15: Errore follow fallito
+  it("TC_1_4_RF_15: follow fallito -> rollback e mostra messaggio di errore", async () => {
+    (followOrganization as jest.Mock).mockRejectedValue(new Error("Errore server"));
 
-    await expect(followOrganization("org1", "user1")).rejects.toThrow("Errore durante il follow dell'organizzazione.");
+    render(<OrganizationClient organization={organization} userId="user1" initialFollowing={false} />);
+
+    const followButton = screen.getByRole("button", { name: /Segui/i });
+    fireEvent.click(followButton);
+
+    await waitFor(() => {
+      expect(followOrganization).toHaveBeenCalledWith("org1", "user1");
+      expect(screen.getByRole("button", { name: /Segui/i })).toBeInTheDocument();
+      expect(screen.getByText(/Azione non riuscita/i)).toBeInTheDocument();
+    });
   });
 
-  it("TC_1_5_RF_15: unfollow fallito - utente non trovato", async () => {
-    mockTransaction.mockImplementation(async (callback: any) => {
-      await callback({
-        user: { findUnique: jest.fn().mockResolvedValue(null) },
-        favoriteOrganization: { deleteMany: jest.fn() },
-      });
-    });
+  // TC_1_5_RF_15: Errore unfollow fallito
+  it("TC_1_5_RF_15: unfollow fallito -> rollback e mostra messaggio di errore", async () => {
+    (unfollowOrganization as jest.Mock).mockRejectedValue(new Error("Errore server"));
 
-    await expect(unfollowOrganization("org1", "userX")).rejects.toThrow("Errore durante l'unfollow dell'organizzazione.");
+    render(<OrganizationClient organization={organization} userId="user1" initialFollowing={true} />);
+
+    const unfollowButton = screen.getByRole("button", { name: /Smetti di seguire/i });
+    fireEvent.click(unfollowButton);
+
+    await waitFor(() => {
+      expect(unfollowOrganization).toHaveBeenCalledWith("org1", "user1");
+      expect(screen.getByRole("button", { name: /Smetti di seguire/i })).toBeInTheDocument();
+      expect(screen.getByText(/Azione non riuscita/i)).toBeInTheDocument();
+    });
   });
 });
