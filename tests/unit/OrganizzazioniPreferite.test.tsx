@@ -68,7 +68,6 @@ describe("OrganizationClient - RF_15", () => {
   });
 
   it("TC_1_2_RF_15: utente non loggato -> mostra messaggio di errore", async () => {
-  // Forziamo il mock a fallire se userId è vuoto
   (followOrganization as jest.Mock).mockImplementation((orgId, userId) => {
     if (!userId) {
       return Promise.reject(new Error("Utente non loggato"));
