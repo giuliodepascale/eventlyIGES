@@ -4,7 +4,6 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import RegisterForm from "@/components/auth/register-form";
 import * as registerAction from "@/actions/register";
 
-// ---------- MOCK dipendenze esterne ----------
 jest.mock("@/lib/db", () => ({
   db: { user: { create: jest.fn() } },
 }));
@@ -21,7 +20,6 @@ jest.mock("@/lib/mail", () => ({
   sendVerificationEmail: jest.fn(),
 }));
 
-// ---------- Helper per compilare il form ----------
 const fillRegisterForm = ({
   email = "user@example.com",
   password = "SecurePass1",
@@ -51,7 +49,6 @@ describe("RegisterForm", () => {
     render(<RegisterForm />);
   });
 
-  // ----------------- Happy Path -----------------
   it("TC_1_RF_1: registrazione riuscita", async () => {
     const { getUserByEmail } = require("@/data/user");
     const { db } = require("@/lib/db");
@@ -74,7 +71,6 @@ describe("RegisterForm", () => {
     });
   });
 
-  // ----------------- Errori Email -----------------
   it("TC_1_1_RF_1: email non valida", async () => {
     fillRegisterForm({ email: "userexample.com" });
     fireEvent.click(screen.getByRole("button", { name: /Registrati/i }));
@@ -99,7 +95,6 @@ describe("RegisterForm", () => {
 
   });
 
-  // ----------------- Errori Password -----------------
   it("TC_1_3_RF_1: password troppo corta", async () => {
     fillRegisterForm({ password: "1234" });
     fireEvent.click(screen.getByRole("button", { name: /Registrati/i }));
@@ -121,7 +116,6 @@ describe("RegisterForm", () => {
 
   });
 
-  // ----------------- Errori Nome -----------------
   it("TC_1_5_RF_1: nome mancante", async () => {
     fillRegisterForm({ name: "" });
     fireEvent.click(screen.getByRole("button", { name: /Registrati/i }));
@@ -143,7 +137,6 @@ describe("RegisterForm", () => {
 
   });
 
-  // ----------------- Errori Privacy / Terms -----------------
   it("TC_1_7_RF_1: privacy non accettata", async () => {
     fillRegisterForm({ privacyPolicy: false });
     fireEvent.click(screen.getByRole("button", { name: /Registrati/i }));
