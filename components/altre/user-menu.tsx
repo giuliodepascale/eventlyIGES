@@ -55,6 +55,25 @@ const UserMenu: React.FC<UserMenuProps> = ({
                         Prenotazioni
                     </Link>
                 </div>
+                 <div>
+                    <Link 
+                        href="/notifications"
+                        className="
+                            hidden
+                            md:block
+                            text-sm
+                            font-semibold
+                            py-2
+                            px-3
+                            rounded-full
+                            hover:bg-neutral-100
+                            transition
+                            cursor-pointer
+                        "
+                    >
+                        Notifiche
+                    </Link>
+                </div>
                 <div>
                     <Link 
                         href="/my-tickets"
