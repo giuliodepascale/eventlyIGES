@@ -1,17 +1,27 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-require-imports */
 // Forza timezone coerente alla logica del form
 process.env.TZ = "Europe/Rome";
 
 import React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
 import EventForm from "@/components/events/event-form";
 
-// ---------- MOCK dipendenze esterne ----------
+//MOCK dipendenze esterne
 jest.mock("@/components/altre/file-uploader", () => ({
   FileUploader: ({ onFieldChange, imageUrl, setFiles }: any) => (
     <div data-testid="file-uploader">Mock Uploader</div>
   ),
+}));
+
+const setSelectValue = (id: string, value: string) => {
+  const el = document.getElementById(id) as HTMLSelectElement | null;
+  if (el) fireEvent.change(el, { target: { value } });
+};
+
+jest.mock("@/lib/map", () => ({
+  getCoordinatesFromOSM: jest.fn().mockResolvedValue(null), 
 }));
 
 jest.mock("@/actions/event", () => ({
@@ -30,15 +40,12 @@ jest.mock("@/lib/supabaseClient", () => ({
   },
 }));
 
-// ---- MOCK "italia" coerente (province come STRINGHE) ----
 jest.mock("italia", () => ({
   __esModule: true,
   default: {
     regioni: [
-      {
-        nome: "Campania",
-        province: ["NA", "SA"],
-      },
+      { nome: "Campania", province: ["NA", "SA"] },
+      { nome: "Lombardia", province: ["MI"] }, 
     ],
     comuni: {
       regioni: [
@@ -46,6 +53,7 @@ jest.mock("italia", () => ({
           province: [
             { code: "NA", comuni: [{ nome: "Napoli" }, { nome: "Pozzuoli" }] },
             { code: "SA", comuni: [{ nome: "Salerno" }, { nome: "Cava de' Tirreni" }] },
+            { code: "MI", comuni: [{ nome: "Milano" }, { nome: "PaeseInesistente" }] }, 
           ],
         },
       ],
@@ -53,7 +61,6 @@ jest.mock("italia", () => ({
   },
 }));
 
-// ---- MUI Date Pickers -> input nativi deterministici ----
 jest.mock("@mui/x-date-pickers/AdapterDayjs", () => ({ AdapterDayjs: {} }));
 jest.mock("@mui/x-date-pickers/LocalizationProvider", () => ({
   LocalizationProvider: ({ children }: any) => <>{children}</>,
@@ -99,20 +106,22 @@ jest.mock("@mui/x-date-pickers/MobileTimePicker", () => ({
       onChange={(e) =>
         onChange &&
         onChange({
-          toDate: () =>
-            new Date(`2000-01-01T${(e.target as HTMLInputElement).value || "00:00"}`),
+          toDate: () => new Date(`2000-01-01T${(e.target as HTMLInputElement).value || "00:00"}`),
         })
       }
     />
   ),
 }));
 
-// ---- categorie usate dal Select ----
 jest.mock("@/components/altre/categories", () => ({
-  categories: [{ label: "Concerto" }, { label: "Festa" }],
+  categories: [
+    { label: "Concerto" },
+    { label: "Workshop" },
+    { label: "Hackathon" },
+    { label: "Open Day" },
+    { label: "Musica" },
+  ],
 }));
-
-// ---- Mock shadcn/ui Select -> <select> nativo (safe) con id dal Trigger ----
 jest.mock("@/components/ui/select", () => {
   let lastId: string | undefined;
 
@@ -137,29 +146,21 @@ jest.mock("@/components/ui/select", () => {
         onChange={(e) => onValueChange && onValueChange(e.target.value)}
         disabled={disabled}
       >
+        {/* placeholder/empty option per permettere valore vuoto */}
+        <option value=""></option>
         {children}
       </select>
     ),
-
-    // Collega l'id del trigger al select per l'associazione label-for
-    SelectTrigger: ({ id }: { id?: string }) => {
-      lastId = id;
-      return null;
-    },
-
+    SelectTrigger: ({ id }: { id?: string }) => { lastId = id; return null; },
     SelectContent: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
     SelectValue: () => null,
-
     SelectItem: ({ value, children }: { value: string; children?: React.ReactNode }) => (
       <option value={value}>{children}</option>
     ),
   };
 });
 
-// ---- Mock Input & Checkbox shadcn (semplici) ----
-jest.mock("@/components/ui/input", () => ({
-  Input: (props: any) => <input {...props} />,
-}));
+jest.mock("@/components/ui/input", () => ({ Input: (p: any) => <input {...p} /> }));
 jest.mock("@/components/ui/checkbox", () => ({
   Checkbox: ({ onCheckedChange, checked, className }: any) => (
     <input
@@ -172,182 +173,535 @@ jest.mock("@/components/ui/checkbox", () => ({
   ),
 }));
 
-// ---- Mock di ResizeObserver per Radix ----
 (global as any).ResizeObserver =
   (global as any).ResizeObserver ||
-  class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  };
+  class { observe() {} unobserve() {} disconnect() {} };
 
-// ---------- Dati base ----------
+const eventActions = require("@/actions/event");
+const createEventMock = eventActions.createEvent as jest.Mock;
+
 const organization = {
-  id: "org-1",
-  nome: "Test Org",
-  indirizzo: "Via Roma 1",
-  comune: "Napoli",
-  provincia: "NA",
-  regione: "Campania",
+  id: "org123",
+  nome: "Org Jazz",
+  indirizzo: "Via Montenapoleone 10",
+  comune: "Milano",
+  provincia: "MI",
+  regione: "Lombardia",
   email: "org@test.it",
 } as any;
 
-const emptyOrganization = {
-  id: "org-1",
-  nome: "Test Org",
-  indirizzo: "Via Roma 1",
-  comune: "",
-  provincia: "",
-  regione: "",
-  email: "org@test.it",
-} as any;
-
-// ---------- Helper (niente UTC!) ----------
 const pad = (n: number) => String(n).padStart(2, "0");
+const setDateLocalString = (y: number, m: number, d: number) => `${y}-${pad(m)}-${pad(d)}`;
 
-const setDateLocalString = (y: number, m: number, d: number) =>
-  `${y}-${pad(m)}-${pad(d)}`;
 
-const setDate = (el: HTMLElement, y: number, m: number, d: number) => {
-  const val = setDateLocalString(y, m, d);
-  fireEvent.change(el, { target: { value: val } });
-};
+beforeEach(() => jest.clearAllMocks());
+afterEach(() => cleanup());
 
-const setToday = (dateInput: HTMLElement) => {
-  const now = new Date();
-  setDate(dateInput, now.getFullYear(), now.getMonth() + 1, now.getDate());
-};
-
-const setTime = (el: HTMLElement, hh = 12, mm = 0) => {
-  fireEvent.change(el, { target: { value: `${pad(hh)}:${pad(mm)}` } });
-};
-
-// =============================================================
-//                         TESTS
-// =============================================================
-describe("EventForm", () => {
-  it("TC-00: rende i campi principali", () => {
+describe("RF_10 – TC_1_RF_10: Evento valido", () => {
+  it("crea correttamente l'evento e reindirizza ai dettagli", async () => {
     render(<EventForm organization={organization} type="create" />);
-    expect(screen.getByLabelText(/Titolo/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Categoria/i)).toBeInTheDocument();
-    expect(screen.getByTestId("file-uploader")).toBeInTheDocument();
-    expect(screen.getByLabelText(/Indirizzo/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Descrizione/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/^Regione$/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/^Provincia$/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/^Comune$/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Crea evento/i)).toBeInTheDocument();
-  });
 
-  it("TC-01: errore su submit con campi obbligatori mancanti", async () => {
-    render(<EventForm organization={emptyOrganization} type="create" />);
-    fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
-    await waitFor(() => {
-      expect(
-        screen.getAllByText((content) =>
-          /obbligatori|obbligatoria|richiesto|deve contenere|url valido|non può essere nel passato/i.test(
-            content
-          )
-        ).length
-      ).toBeGreaterThan(0);
+ 
+    fireEvent.change(screen.getByLabelText(/Titolo/i), {
+      target: { value: "Concerto Jazz" },
     });
-  });
-
-  // ---------- EQUIVALENCE CLASSES & BOUNDARIES ----------
-  it("TC-10 (Title ECi<3): titolo troppo corto", async () => {
-    render(<EventForm organization={organization} type="create" />);
-    fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "ab" } });
-    fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
-    await waitFor(() => {
-      expect(screen.getByText(/Il titolo deve contenere almeno 3 caratteri/i)).toBeInTheDocument();
-    });
-  });
-
-  it("TC-11 (Desc ECi<10): descrizione troppo corta", async () => {
-    render(<EventForm organization={organization} type="create" />);
     fireEvent.change(screen.getByLabelText(/Descrizione/i), {
-      target: { value: "breve" },
+      target: { value: "Evento musicale di jazz con artisti locali" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
-    await waitFor(() => {
-      expect(
-        screen.getByText(/La descrizione deve contenere almeno 10 caratteri/i)
-      ).toBeInTheDocument();
-    });
-  });
 
-  it("TC-12 (Date ECi-past): data nel passato non ammessa", async () => {
-    render(<EventForm organization={organization} type="create" />);
-    const dateInput = screen.getByTestId("date-picker");
-    // ieri (locale)
-    const past = new Date();
-    past.setDate(past.getDate() - 1);
-    const localPast = setDateLocalString(
-      past.getFullYear(),
-      past.getMonth() + 1,
-      past.getDate()
-    );
-    fireEvent.change(dateInput, { target: { value: localPast } });
-
-    fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
-    await waitFor(() => {
-      expect(screen.getByText(/La data dell'evento non può essere nel passato/i)).toBeInTheDocument();
-    });
-  });
-
-  it("TC-13 (Category ECi-empty): categoria vuota", async () => {
-    render(<EventForm organization={emptyOrganization} type="create" />);
-    fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
-    await waitFor(() => {
-      expect(screen.getByText(/La categoria è obbligatoria/i)).toBeInTheDocument();
-    });
-  });
-
-  it("TC-14 (Loc ECi-empty): comune/provincia/regione vuoti", async () => {
-    render(<EventForm organization={emptyOrganization} type="create" />);
-    fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
-    await waitFor(() => {
-      expect(screen.getByText(/Il campo Comune è obbligatorio/i)).toBeInTheDocument();
-      expect(screen.getByText(/Il campo Provincia è obbligatorio/i)).toBeInTheDocument();
-      expect(screen.getByText(/Il campo Regione è obbligatorio/i)).toBeInTheDocument();
-    });
-  });
-
-  // Questi due casi sono meglio nella suite unitaria Zod (non riproducibili via UI qui):
-  it.skip("TC-15 (Time ECi): orario non impostato/errato -> errore (spostare nei test Zod)", async () => {});
-  it.skip("TC-16 (Image ECi): url non valido (spostare nei test Zod)", async () => {});
-
-  it("TC-20 (Happy path): tutti i campi validi -> createEvent chiamata", async () => {
-    const { createEvent } = require("@/actions/event");
-    render(<EventForm organization={organization} type="create" />);
-
-    // Testo
-    fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Concerto Test" } });
-    fireEvent.change(screen.getByLabelText(/Descrizione/i), {
-      target: { value: "Descrizione evento valida per test" },
-    });
-    fireEvent.change(screen.getByLabelText(/Indirizzo/i), { target: { value: "Via Roma 2" } });
-
-    // Select ordinati: 0=Categoria, 1=Status, 2=Regione, 3=Provincia, 4=Comune
     const selects = screen.getAllByTestId("select");
-    fireEvent.change(selects[0], { target: { value: "Concerto" } }); // Categoria
-    fireEvent.change(selects[2], { target: { value: "Campania" } }); // Regione
-    fireEvent.change(selects[3], { target: { value: "NA" } });       // Provincia
-    fireEvent.change(selects[4], { target: { value: "Napoli" } });    // Comune
+    fireEvent.change(selects[0], { target: { value: "Musica" } });    
+    fireEvent.change(selects[1], { target: { value: "pubblico" } });  
+    fireEvent.change(selects[2], { target: { value: "Lombardia" } }); 
+    fireEvent.change(selects[3], { target: { value: "MI" } });        
+    fireEvent.change(selects[4], { target: { value: "Milano" } });     
 
-    // Data/ora valide (locale)
-    setToday(screen.getByTestId("date-picker"));
-    setTime(screen.getByTestId("time-picker"), 12, 0);
+    fireEvent.change(screen.getByLabelText(/Indirizzo/i), {
+      target: { value: "Via Montenapoleone 10" },
+    });
+
+    fireEvent.change(screen.getByTestId("date-picker"), {
+      target: { value: setDateLocalString(2025, 10, 10) },
+    });
+    fireEvent.change(screen.getByTestId("time-picker"), {
+      target: { value: "20:30" },
+    });
+
+    const checkbox = screen.getByLabelText("checkbox");
+    fireEvent.click(checkbox);
+
 
     fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
 
-    await waitFor(() => {
-      expect(
-        screen.queryByText(
-          /obbligatori|obbligatoria|richiesto|deve contenere|url valido|non può essere nel passato/i
-        )
-      ).toBeNull();
-      expect(createEvent).toHaveBeenCalled();
-    });
+    await waitFor(() => expect(createEventMock).toHaveBeenCalledTimes(1));
+  });
+});
+
+it("TC_1_1_RF_10: Titolo troppo corto → mostra errore e NON crea l'evento", async () => {
+  render(<EventForm organization={organization} type="create" />);
+
+
+  fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Hi" } });
+  fireEvent.change(screen.getByLabelText(/Descrizione/i), {
+    target: { value: "Evento musicale di jazz con artisti locali" },
+  });
+
+  const selects = screen.getAllByTestId("select");
+  fireEvent.change(selects[0], { target: { value: "Musica" } });    
+  fireEvent.change(selects[1], { target: { value: "pubblico" } });  
+  fireEvent.change(selects[2], { target: { value: "Lombardia" } });  
+  fireEvent.change(selects[3], { target: { value: "MI" } });      
+  fireEvent.change(selects[4], { target: { value: "Milano" } });    
+
+  fireEvent.change(screen.getByLabelText(/Indirizzo/i), {
+    target: { value: "Via Montenapoleone 10" },
+  });
+
+  fireEvent.change(screen.getByTestId("date-picker"), {
+    target: { value: "2025-10-10" },
+  });
+  fireEvent.change(screen.getByTestId("time-picker"), {
+    target: { value: "20:30" },
+  });
+
+  const checkbox = screen.getByLabelText("checkbox");
+  fireEvent.click(checkbox);
+
+  fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
+
+  await waitFor(() => {
+    expect(
+      screen.getByText(/Il titolo deve contenere almeno 3 caratteri/i)
+    ).toBeInTheDocument();
+    expect(createEventMock).not.toHaveBeenCalled();
+  });
+});
+
+it("TC_1_2_RF_10: Titolo troppo lungo → mostra errore e NON crea l'evento", async () => {
+  render(<EventForm organization={organization} type="create" />);
+
+  const longTitle =
+    "Concerto Jazz molto lungo che supera i cinquanta caratteri ed è invalido";
+  fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: longTitle } });
+
+  fireEvent.change(screen.getByLabelText(/Descrizione/i), {
+    target: { value: "Evento musicale di jazz con artisti locali" },
+  });
+
+  const selects = screen.getAllByTestId("select");
+  fireEvent.change(selects[0], { target: { value: "Musica" } });    
+  fireEvent.change(selects[1], { target: { value: "pubblico" } });  
+  fireEvent.change(selects[2], { target: { value: "Lombardia" } }); 
+  fireEvent.change(selects[3], { target: { value: "MI" } });        
+  fireEvent.change(selects[4], { target: { value: "Milano" } });    
+
+  fireEvent.change(screen.getByLabelText(/Indirizzo/i), {
+    target: { value: "Via Montenapoleone 10" },
+  });
+
+  fireEvent.change(screen.getByTestId("date-picker"), {
+    target: { value: "2025-10-10" },
+  });
+  fireEvent.change(screen.getByTestId("time-picker"), {
+    target: { value: "20:30" },
+  });
+
+  const checkbox = screen.getByLabelText("checkbox");
+  fireEvent.click(checkbox);
+
+  fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
+
+  await waitFor(() => {
+    expect(
+      screen.getByText(/Il titolo (non può|non deve) superare i? ?50 caratter/i)
+    ).toBeInTheDocument();
+    expect(createEventMock).not.toHaveBeenCalled();
+  });
+});
+it("TC_1_3_RF_10: Descrizione troppo corta → mostra errore e NON crea l'evento", async () => {
+  render(<EventForm organization={organization} type="create" />);
+
+  fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Concerto Jazz" } });
+  fireEvent.change(screen.getByLabelText(/Descrizione/i), { target: { value: "Breve" } });
+
+  const selects = screen.getAllByTestId("select");
+  fireEvent.change(selects[0], { target: { value: "Musica" } });
+  fireEvent.change(selects[1], { target: { value: "pubblico" } });
+  fireEvent.change(selects[2], { target: { value: "Lombardia" } });
+  fireEvent.change(selects[3], { target: { value: "MI" } });
+  fireEvent.change(selects[4], { target: { value: "Milano" } });
+
+  fireEvent.change(screen.getByLabelText(/Indirizzo/i), {
+    target: { value: "Via Montenapoleone 10" },
+  });
+
+  fireEvent.change(screen.getByTestId("date-picker"), { target: { value: "2025-10-10" } });
+  fireEvent.change(screen.getByTestId("time-picker"), { target: { value: "20:30" } });
+
+  const checkbox = screen.getByLabelText("checkbox");
+  fireEvent.click(checkbox);
+
+  fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
+
+  await waitFor(() => {
+    expect(
+      screen.getByText(/La descrizione.*almeno\s*10 caratteri/i)
+    ).toBeInTheDocument();
+    expect(createEventMock).not.toHaveBeenCalled();
+  });
+});
+
+it("TC_1_4_RF_10: Descrizione troppo lunga → mostra errore e NON crea l'evento", async () => {
+  render(<EventForm organization={organization} type="create" />);
+
+  fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Concerto Jazz" } });
+
+  const longDesc = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. "
+    .repeat(6); 
+  fireEvent.change(screen.getByLabelText(/Descrizione/i), { target: { value: longDesc } });
+
+  const selects = screen.getAllByTestId("select");
+  fireEvent.change(selects[0], { target: { value: "Musica" } });
+  fireEvent.change(selects[1], { target: { value: "pubblico" } });
+  fireEvent.change(selects[2], { target: { value: "Lombardia" } });
+  fireEvent.change(selects[3], { target: { value: "MI" } });
+  fireEvent.change(selects[4], { target: { value: "Milano" } });
+
+  fireEvent.change(screen.getByLabelText(/Indirizzo/i), {
+    target: { value: "Via Montenapoleone 10" },
+  });
+
+  fireEvent.change(screen.getByTestId("date-picker"), { target: { value: "2025-10-10" } });
+  fireEvent.change(screen.getByTestId("time-picker"), { target: { value: "20:30" } });
+
+  const checkbox = screen.getByLabelText("checkbox");
+  fireEvent.click(checkbox);
+
+  fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
+
+  await waitFor(() => {
+    expect(
+      screen.getByText(/La descrizione (non può|non deve) superare i? ?300 caratter/i)
+    ).toBeInTheDocument();
+    expect(createEventMock).not.toHaveBeenCalled();
+  });
+});
+
+it("TC_1_5_RF_10: Data nel passato → mostra errore e NON crea l'evento", async () => {
+  render(<EventForm organization={organization} type="create" />);
+
+  fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Concerto Jazz" } });
+  fireEvent.change(screen.getByLabelText(/Descrizione/i), {
+    target: { value: "Evento musicale di jazz con artisti locali" },
+  });
+
+  const selects = screen.getAllByTestId("select");
+  fireEvent.change(selects[0], { target: { value: "Musica" } });
+  fireEvent.change(selects[1], { target: { value: "pubblico" } });
+  fireEvent.change(selects[2], { target: { value: "Lombardia" } });
+  fireEvent.change(selects[3], { target: { value: "MI" } });
+  fireEvent.change(selects[4], { target: { value: "Milano" } });
+
+  fireEvent.change(screen.getByLabelText(/Indirizzo/i), {
+    target: { value: "Via Montenapoleone 10" },
+  });
+
+  fireEvent.change(screen.getByTestId("date-picker"), { target: { value: "2020-01-01" } });
+  fireEvent.change(screen.getByTestId("time-picker"), { target: { value: "20:30" } });
+
+  const checkbox = screen.getByLabelText("checkbox");
+  fireEvent.click(checkbox);
+
+  fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
+
+  await waitFor(() => {
+    expect(
+      screen.getByText(/La data dell'evento non può essere nel passato/i)
+    ).toBeInTheDocument();
+    expect(createEventMock).not.toHaveBeenCalled();
+  });
+});
+
+it("TC_1_6_RF_10: Indirizzo troppo corto → mostra errore e NON crea l'evento", async () => {
+  render(<EventForm organization={organization} type="create" />);
+
+  fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Concerto Jazz" } });
+  fireEvent.change(screen.getByLabelText(/Descrizione/i), {
+    target: { value: "Evento musicale di jazz con artisti locali" },
+  });
+
+  const selects = screen.getAllByTestId("select");
+  fireEvent.change(selects[0], { target: { value: "Musica" } });
+  fireEvent.change(selects[1], { target: { value: "pubblico" } });
+  fireEvent.change(selects[2], { target: { value: "Lombardia" } });
+  fireEvent.change(selects[3], { target: { value: "MI" } });
+  fireEvent.change(selects[4], { target: { value: "Milano" } });
+
+  fireEvent.change(screen.getByLabelText(/Indirizzo/i), { target: { value: "Vi" } });
+
+  fireEvent.change(screen.getByTestId("date-picker"), { target: { value: "2025-10-10" } });
+  fireEvent.change(screen.getByTestId("time-picker"), { target: { value: "20:30" } });
+
+  const checkbox = screen.getByLabelText("checkbox");
+  fireEvent.click(checkbox);
+
+  fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
+
+  await waitFor(() => {
+    expect(
+      screen.getByText(/L'indirizzo.*almeno\s*3 caratteri/i)
+    ).toBeInTheDocument();
+    expect(createEventMock).not.toHaveBeenCalled();
+  });
+});
+
+it("TC_1_7_RF_10: Indirizzo troppo lungo → mostra errore e NON crea l'evento", async () => {
+  render(<EventForm organization={organization} type="create" />);
+
+  fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Concerto Jazz" } });
+  fireEvent.change(screen.getByLabelText(/Descrizione/i), {
+    target: { value: "Evento musicale di jazz con artisti locali" },
+  });
+
+  const selects = screen.getAllByTestId("select");
+  fireEvent.change(selects[0], { target: { value: "Musica" } });
+  fireEvent.change(selects[1], { target: { value: "pubblico" } });
+  fireEvent.change(selects[2], { target: { value: "Lombardia" } });
+  fireEvent.change(selects[3], { target: { value: "MI" } });
+  fireEvent.change(selects[4], { target: { value: "Milano" } });
+
+  const longAddr =
+    "Via con nome molto lungo che supera i cinquanta caratteri per test";
+  fireEvent.change(screen.getByLabelText(/Indirizzo/i), { target: { value: longAddr } });
+
+  fireEvent.change(screen.getByTestId("date-picker"), { target: { value: "2025-10-10" } });
+  fireEvent.change(screen.getByTestId("time-picker"), { target: { value: "20:30" } });
+
+  const checkbox = screen.getByLabelText("checkbox");
+  fireEvent.click(checkbox);
+
+  fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
+
+  await waitFor(() => {
+    expect(
+      screen.getByText(/L'indirizzo (non può|non deve) superare i? ?50 caratter/i)
+    ).toBeInTheDocument();
+    expect(createEventMock).not.toHaveBeenCalled();
+  });
+});
+
+it("TC_1_8_RF_10: OrganizationId mancante → il submit è bloccato (createEvent NON chiamata)", async () => {
+
+  const orgNoId = { ...organization, id: "" } as any;
+
+  render(<EventForm organization={orgNoId} type="create" />);
+
+  fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Concerto Jazz" } });
+  fireEvent.change(screen.getByLabelText(/Descrizione/i), {
+    target: { value: "Evento musicale di jazz con artisti locali" },
+  });
+
+  const selects = screen.getAllByTestId("select");
+  fireEvent.change(selects[0], { target: { value: "Musica" } });
+  fireEvent.change(selects[1], { target: { value: "pubblico" } });
+  fireEvent.change(selects[2], { target: { value: "Lombardia" } });
+  fireEvent.change(selects[3], { target: { value: "MI" } });
+  fireEvent.change(selects[4], { target: { value: "Milano" } });
+
+  fireEvent.change(screen.getByLabelText(/Indirizzo/i), { target: { value: "Via Montenapoleone 10" } });
+  fireEvent.change(screen.getByTestId("date-picker"), { target: { value: "2025-10-10" } });
+  fireEvent.change(screen.getByTestId("time-picker"), { target: { value: "20:30" } });
+
+  const checkbox = screen.getByLabelText("checkbox");
+  fireEvent.click(checkbox);
+
+  fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
+
+  await waitFor(() => {
+    expect(createEventMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /Crea evento/i })).toBeInTheDocument();
+  });
+
+
+});
+
+// TC_1_9_RF_10 — Category mancante
+it("TC_1_9_RF_10: Category mancante → blocco submit e messaggio su categoria", async () => {
+  render(<EventForm organization={organization} type="create" />);
+
+  fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Concerto Jazz" } });
+  fireEvent.change(screen.getByLabelText(/Descrizione/i), {
+    target: { value: "Evento musicale di jazz con artisti locali" },
+  });
+
+  const selects = screen.getAllByTestId("select");
+  fireEvent.change(selects[1], { target: { value: "pubblico" } }); 
+  fireEvent.change(selects[2], { target: { value: "Lombardia" } }); 
+  fireEvent.change(selects[3], { target: { value: "MI" } });        
+  fireEvent.change(selects[4], { target: { value: "Milano" } });  
+
+  fireEvent.change(screen.getByLabelText(/Indirizzo/i), { target: { value: "Via Montenapoleone 10" } });
+  fireEvent.change(screen.getByTestId("date-picker"), { target: { value: "2025-10-10" } });
+  fireEvent.change(screen.getByTestId("time-picker"), { target: { value: "20:30" } });
+  fireEvent.click(screen.getByLabelText("checkbox"));
+
+  fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
+
+  await waitFor(() => {
+    expect(createEventMock).not.toHaveBeenCalled();
+    const msg =
+      screen.queryByText(/category\s*mancante/i) ||
+      screen.queryByText(/categoria.*(obbligatoria|mancante)/i) ||
+      screen.queryByText(/seleziona.*categoria/i);
+    expect(msg).toBeTruthy();
+  });
+});
+// TC_1_10_RF_10 — Comune mancante
+it("TC_1_10_RF_10: Comune mancante → blocco submit e messaggio su comune", async () => {
+  render(<EventForm organization={organization} type="create" />);
+
+  fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Concerto Jazz" } });
+  fireEvent.change(screen.getByLabelText(/Descrizione/i), {
+    target: { value: "Evento musicale di jazz con artisti locali" },
+  });
+
+  const selects = screen.getAllByTestId("select");
+  fireEvent.change(selects[0], { target: { value: "Musica" } });
+  fireEvent.change(selects[1], { target: { value: "pubblico" } });
+  fireEvent.change(selects[2], { target: { value: "Lombardia" } });
+  fireEvent.change(selects[3], { target: { value: "MI" } });
+
+  setSelectValue("comune", "");                
+  try { fireEvent.change(selects[4], { target: { value: "" } }); } catch {}
+
+  fireEvent.change(screen.getByLabelText(/Indirizzo/i), { target: { value: "Via Montenapoleone 10" } });
+  fireEvent.change(screen.getByTestId("date-picker"), { target: { value: "2025-10-10" } });
+  fireEvent.change(screen.getByTestId("time-picker"), { target: { value: "20:30" } });
+  fireEvent.click(screen.getByLabelText("checkbox"));
+
+  fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
+
+  await waitFor(() => {
+    expect(createEventMock).not.toHaveBeenCalled(); 
+    const msg =
+      screen.queryByText(/comune\s*mancante/i) ||
+      screen.queryByText(/comune.*(obbligatorio|mancante)/i) ||
+      screen.queryByText(/seleziona.*comune/i);
+    expect(msg).toBeTruthy();
+  });
+});
+it("TC_1_11_RF_10: Provincia mancante → blocco submit (createEvent NON chiamata)", async () => {
+  render(<EventForm organization={organization} type="create" />);
+
+  fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Concerto Jazz" } });
+  fireEvent.change(screen.getByLabelText(/Descrizione/i), {
+    target: { value: "Evento musicale di jazz con artisti locali" },
+  });
+
+  const selects = screen.getAllByTestId("select");
+  fireEvent.change(selects[0], { target: { value: "Musica" } });     
+  fireEvent.change(selects[1], { target: { value: "pubblico" } });   
+  fireEvent.change(selects[2], { target: { value: "Lombardia" } });  
+
+  fireEvent.change(selects[3], { target: { value: "" } });
+  fireEvent.change(selects[4], { target: { value: "" } });
+
+  fireEvent.change(screen.getByLabelText(/Indirizzo/i), { target: { value: "Via Montenapoleone 10" } });
+  fireEvent.change(screen.getByTestId("date-picker"), { target: { value: "2025-10-10" } });
+  fireEvent.change(screen.getByTestId("time-picker"), { target: { value: "20:30" } });
+  fireEvent.click(screen.getByLabelText("checkbox"));
+
+  fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
+
+ await waitFor(() => {
+  expect(createEventMock).not.toHaveBeenCalled();
+
+  const provinciaSelect = screen.getAllByTestId("select")[3] as HTMLSelectElement;
+  expect(provinciaSelect.value).toBe("");
+
+  expect(
+    screen.getByText(/Il\s*campo\s*Provincia\s*(è|e')\s*obbligatorio/i, { selector: "p" })
+  ).toBeInTheDocument();
+  });
+});
+
+// TC_1_12_RF_10 — Regione mancante
+it("TC_1_12_RF_10: Regione mancante → blocco submit e messaggio su regione", async () => {
+  render(<EventForm organization={organization} type="create" />);
+
+  fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Concerto Jazz" } });
+  fireEvent.change(screen.getByLabelText(/Descrizione/i), {
+    target: { value: "Evento musicale di jazz con artisti locali" },
+  });
+
+  const selects = screen.getAllByTestId("select");
+  fireEvent.change(selects[0], { target: { value: "Musica" } });    
+  fireEvent.change(selects[1], { target: { value: "pubblico" } });  
+
+  fireEvent.change(selects[2], { target: { value: "" } });          
+  fireEvent.change(selects[3], { target: { value: "" } });         
+  fireEvent.change(selects[4], { target: { value: "" } });           
+
+  fireEvent.change(screen.getByLabelText(/Indirizzo/i), { target: { value: "Via Montenapoleone 10" } });
+  fireEvent.change(screen.getByTestId("date-picker"), { target: { value: "2025-10-10" } });
+  fireEvent.change(screen.getByTestId("time-picker"), { target: { value: "20:30" } });
+  fireEvent.click(screen.getByLabelText("checkbox"));
+
+  fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
+
+  await waitFor(() => {
+    expect(createEventMock).not.toHaveBeenCalled();
+
+    const regioneSelect = screen.getAllByTestId("select")[2] as HTMLSelectElement;
+    expect(regioneSelect.value).toBe("");
+
+    const msg =
+      screen.queryByText(/Regione\s*mancante/i, { selector: "p" }) ||
+      screen.queryByText(/Il\s*campo\s*Regione\s*(è|e')\s*obbligatorio/i, { selector: "p" }) ||
+      screen.queryByText(/Seleziona\s+la\s+regione/i);
+    expect(msg).toBeTruthy();
+  });
+});
+
+
+it("TC_1_13_RF_10: Indirizzo non valido (errore lato server) → mostra errore e NON procede oltre", async () => {
+
+  createEventMock.mockResolvedValueOnce({
+    ok: false,
+    error: "Indirizzo non valido",
+  });
+
+  render(<EventForm organization={organization} type="create" />);
+
+  fireEvent.change(screen.getByLabelText(/Titolo/i), { target: { value: "Concerto Jazz" } });
+  fireEvent.change(screen.getByLabelText(/Descrizione/i), {
+    target: { value: "Evento musicale di jazz con artisti locali" },
+  });
+
+  const selects = screen.getAllByTestId("select");
+  fireEvent.change(selects[0], { target: { value: "Musica" } });
+  fireEvent.change(selects[1], { target: { value: "pubblico" } });
+  fireEvent.change(selects[2], { target: { value: "Lombardia" } });
+  fireEvent.change(selects[3], { target: { value: "MI" } });
+  fireEvent.change(selects[4], { target: { value: "Milano" } });
+
+  fireEvent.change(screen.getByLabelText(/Indirizzo/i), {
+    target: { value: "Via Fantasma 123" },
+  });
+
+  fireEvent.change(screen.getByTestId("date-picker"), { target: { value: "2025-10-10" } });
+  fireEvent.change(screen.getByTestId("time-picker"), { target: { value: "20:30" } });
+
+  const checkbox = screen.getByLabelText("checkbox");
+  fireEvent.click(checkbox);
+
+  fireEvent.click(screen.getByRole("button", { name: /Crea evento/i }));
+
+  await waitFor(() => expect(createEventMock).toHaveBeenCalledTimes(1));
+
+  await waitFor(() => {
+    expect(
+      screen.getByText(/Indirizzo\s+non\s+valido/i, { selector: "p" })
+    ).toBeInTheDocument();
   });
 });
